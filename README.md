@@ -1,6 +1,5 @@
-# CPG Python Template
+# Talos AF (Actionable Findings)
 
-Template repository based on the [CPG team-docs](https://github.com/populationgenomics/team-docs/blob/main/new_repository.md) content.
+This is a tool which is conceptually similar to [Talos](https://github.com/populationgenomics/talos), but is designed to specifically target the ACMG Actionable Findings variant list. 
 
-This contains python and markdown linting configuration, and a github linting action.
-Before making a new repository based on this template, it may be worth auditing the versions of linting tools and GitHub Actions listed in _.pre-commit-config.yaml_ and _.github/workflows_.
+This is designed to run on large callsets, and identify all instances of ACMG reportable variants, based on the flow chart *here*.

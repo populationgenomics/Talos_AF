@@ -1,4 +1,4 @@
-bump2version
-black
-pre-commit
-pylint
+bump2version>=1.0.1
+pre-commit>=3.7
+pytest>=8.3
+ruff>=0.4.7
