@@ -16,7 +16,8 @@ setup(
     version='0.0.0',
     author='Matthew Welland, CPG',
     author_email='matthew.welland@populationgenomics.org.au, cas.simons@populationgenomics.org.au',
-    package_data={'talos_af': ['example_config.toml']},
+    # include_package_data=True,
+    # package_data={'talos_af': ['example_config.toml']},
     url='https://github.com/populationgenomics/talos_af',
     license='MIT',
     classifiers=[
@@ -33,13 +34,22 @@ setup(
     ],
     packages=find_packages('src'),
     package_dir={'': 'src'},
-    include_package_data=True,
-    install_requires=[],
+    install_requires=[
+        'bump2version>=1.0.1',
+        'cyvcf2==0.31.1',
+        'hail==0.2.133',
+        'httpx==0.27.0',
+        'pre-commit>=3.7',
+        'pydantic==2.5.2',
+        'ruff>=0.4.7',
+        'toml==0.10.2',
+    ],
     extras_require={
-        'test': [],
+        'test': [
+            'pytest>=8.3',
+        ],
     },
     entry_points={
-        'console_scripts': [
-        ],
+        'console_scripts': [],
     },
 )
