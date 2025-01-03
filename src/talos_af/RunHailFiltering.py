@@ -70,34 +70,18 @@ def annotate_clinvarbitration(mt: hl.MatrixTable, clinvar: str) -> hl.MatrixTabl
     # annotate as either strong or regular, return the result
     return mt.annotate_rows(
         info=mt.info.annotate(
-            clinvar_talos=hl.if_else(
+            clinvarbitration=hl.if_else(
                 mt.info.clinvar_significance.lower().contains(PATHOGENIC),
                 ONE_INT,
                 MISSING_INT,
             ),
-            clinvar_talos_strong=hl.if_else(
+            clinvarbitration_strong=hl.if_else(
                 (mt.info.clinvar_significance.lower().contains(PATHOGENIC)) & (mt.info.clinvar_stars > 0),
                 ONE_INT,
                 MISSING_INT,
             ),
         ),
     )
-
-
-def filter_on_quality_flags(mt: hl.MatrixTable) -> hl.MatrixTable:
-    """
-    filter MT to rows with 0 quality filters
-    note: in Hail, PASS is represented as an empty set
-
-    This is overridden with Clinvar Pathogenic
-
-    Args:
-        mt (hl.MatrixTable): all remaining variants
-    Returns:
-        MT with all filtered variants removed
-    """
-
-    return mt.filter_rows(hl.is_missing(mt.filters) | (mt.filters.length() == 0) | (mt.info.clinvar_talos == ONE_INT))
 
 
 def extract_annotations(mt: hl.MatrixTable) -> hl.MatrixTable:
@@ -127,29 +111,36 @@ def extract_annotations(mt: hl.MatrixTable) -> hl.MatrixTable:
             gnomad_ac=hl.or_else(mt.gnomad_genomes.AC, MISSING_INT),
             gnomad_hom=hl.or_else(mt.gnomad_genomes.Hom, MISSING_INT),
             gnomad_hemi=hl.or_else(mt.gnomad_genomes.Hemi, MISSING_INT),
-            splice_ai_delta=hl.or_else(mt.splice_ai.delta_score, MISSING_FLOAT_LO),
-            splice_ai_csq=hl.or_else(mt.splice_ai.splice_consequence, MISSING_STRING).replace(' ', '_'),
         ),
     )
 
 
-def filter_matrix_by_ac(mt: hl.MatrixTable, ac_threshold: float = 0.01) -> hl.MatrixTable:
+def quality_filter_matrix(mt: hl.MatrixTable, ac_threshold: float = 0.01, min_callset_ac: int = 5) -> hl.MatrixTable:
     """
+    Remove variants with VCF quality filters
+
     Remove variants with AC in joint-call over threshold
     Will never remove variants with 5 or fewer instances
+
     Also overridden by having a Clinvar Pathogenic anno.
 
     Args:
         mt (hl.MatrixTable):
         ac_threshold (float):
+        min_callset_ac (int): only AC filter if there are at least this many calls
+
     Returns:
         MT with all common-in-this-JC variants removed
         (unless overridden by clinvar path)
     """
-    min_callset_ac = 5
+
     return mt.filter_rows(
-        ((min_callset_ac >= mt.info.AC[0]) | (ac_threshold > mt.info.AC[0] / mt.info.AN))
-        | (mt.info.clinvar_talos == ONE_INT),
+        # keep variants with no applied filters
+        (hl.is_missing(mt.filters) | (mt.filters.length() == 0))
+        # keep variants below the threshold frequency
+        | ((min_callset_ac >= mt.info.AC[0]) | (ac_threshold > mt.info.AC[0] / mt.info.AN))
+        # permit clinvar pathogenic to slip through these filters
+        | (mt.info.clinvarbitration == ONE_INT),
     )
 
 
@@ -167,47 +158,8 @@ def filter_to_population_rare(mt: hl.MatrixTable) -> hl.MatrixTable:
             (hl.or_else(mt.gnomad_exomes.AF, MISSING_FLOAT_LO) < rare_af_threshold)
             & (hl.or_else(mt.gnomad_genomes.AF, MISSING_FLOAT_LO) < rare_af_threshold)
         )
-        | (mt.info.clinvar_talos == ONE_INT),
+        | (mt.info.clinvarbitration == ONE_INT),
     )
-
-
-def drop_useless_fields(mt: hl.MatrixTable) -> hl.MatrixTable:
-    """
-    Remove fields from the MT which are irrelevant to the analysis
-    Write times for the checkpoints are a substantial portion of the runtime
-    Aim to reduce that by removing the amount of written data
-
-    These fields would not be exported in the VCF anyway, so no downstream
-    impacts caused by removal prior to that write
-
-    Args:
-        mt ():
-    Returns:
-
-    """
-
-    # drop the useless top-level fields
-    mt = mt.drop(*[field for field in USELESS_FIELDS if field in mt.row_value])
-
-    # now drop most VEP fields
-    return mt.annotate_rows(vep=hl.Struct(transcript_consequences=mt.vep.transcript_consequences))
-
-
-def remove_variants_outside_gene_roi(mt: hl.MatrixTable, relevant_genes: hl.SetExpression) -> hl.MatrixTable:
-    """
-    chunky filtering method - get rid of every variant without at least one relevant-gene annotation
-    does not edit the field itself, that will come later (split_rows_by_gene_and_filter_to_green)
-
-    Args:
-        mt ():
-        relevant_genes ():
-
-    Returns:
-        the same MT, just reduced
-    """
-
-    # filter rows without a green gene (removes empty geneIds)
-    return mt.filter_rows(hl.len(relevant_genes.intersection(mt.geneIds)) > 0)
 
 
 def split_rows_by_gene_and_filter_to_relevant(mt: hl.MatrixTable, relevant_genes: hl.SetExpression) -> hl.MatrixTable:
@@ -284,7 +236,7 @@ def identify_high_impact_variants(mt: hl.MatrixTable) -> hl.MatrixTable:
                         )
                         > 0
                     )
-                    | (mt.info.clinvar_talos == ONE_INT)
+                    | (mt.info.clinvarbitration == ONE_INT)
                 ),
                 ONE_INT,
                 MISSING_INT,
@@ -454,13 +406,10 @@ def main(
             get_logger().info('Trying to write the result locally, might need more space on disk...')
             mt = generate_a_checkpoint(mt, f'{checkpoint}_repartitioned')
 
-    # shrink the time taken to write checkpoints
-    mt = drop_useless_fields(mt=mt)
-
     # read in the AF specification
     af_spec = read_json_from_path(af_spec, return_model=AFSpecification)
 
-    # pull out the relevant genes from the AFSpecification
+    # pull out the relevant genes from the AFSpecification, cast as a hl.set
     relevant_gene_expression = hl.set(set(af_spec.genes.keys()))
 
     # remove any rows which have no genes of interest
@@ -475,11 +424,8 @@ def main(
     # remove common-in-gnomad variants (also includes ClinVar annotation)
     mt = filter_to_population_rare(mt=mt)
 
-    # filter out quality failures
-    mt = filter_on_quality_flags(mt=mt)
-
     # filter variants by frequency
-    mt = filter_matrix_by_ac(mt=mt)
+    mt = quality_filter_matrix(mt=mt)
 
     # rearrange the row annotation to make syntax nicer downstream
     mt = extract_annotations(mt=mt)
@@ -489,7 +435,7 @@ def main(
     mt = identify_high_impact_variants(mt=mt)
 
     # remove all variants without positively assigned labels
-    mt = mt.filter_rows((mt.info.clinvar_talos_strong == 1) | (mt.info.high_impact == 1))
+    mt = mt.filter_rows((mt.info.clinvarbitration_strong == 1) | (mt.info.high_impact == 1))
 
     # obtain the massive CSQ string using method stolen from the Broad's Gnomad library
     # also take the single gene_id (from the exploded attribute)
