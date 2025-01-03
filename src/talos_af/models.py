@@ -6,14 +6,12 @@ from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from talos.static_values import get_granular_date, get_logger
 
 NON_HOM_CHROM = ['X', 'Y', 'MT', 'M']
 CHROM_ORDER = list(map(str, range(1, 23))) + NON_HOM_CHROM
 
 # some kind of version tracking
-CURRENT_VERSION = '1.1.0'
-ALL_VERSIONS = [None, '1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.1.0']
+CURRENT_VERSION = '0.0.1'
 
 # ratios for use in AB testing
 MAX_WT = 0.15
@@ -86,8 +84,6 @@ class VariantCommon(BaseModel):
     info: dict[str, str | int | float | list[str] | list[float] | dict[str, str] | bool] = Field(default_factory=dict)
     het_samples: set[str] = Field(default_factory=set, exclude=True)
     hom_samples: set[str] = Field(default_factory=set, exclude=True)
-    boolean_categories: list[str] = Field(default_factory=list, exclude=True)
-    sample_categories: list[str] = Field(default_factory=list, exclude=True)
     sample_support: list[str] = Field(default_factory=list, exclude=True)
     phased: dict = Field(default_factory=dict)
 
@@ -99,132 +95,6 @@ class VariantCommon(BaseModel):
 
     def __eq__(self, other):
         return self.coordinates == other.coordinates
-
-    @property
-    def has_boolean_categories(self) -> bool:
-        """
-        check that the variant has at least one assigned class
-        """
-        return any(self.info[value] for value in self.boolean_categories)
-
-    @property
-    def has_sample_categories(self) -> bool:
-        """
-        check that the variant has any list-category entries
-        """
-        return any(self.info[value] for value in self.sample_categories)
-
-    @property
-    def has_support(self) -> bool:
-        """
-        check for a True flag in any CategorySupport* attribute
-        Returns:
-            True if variant is support
-        """
-        return any(self.info[value] for value in self.sample_support)
-
-    @property
-    def category_non_support(self) -> bool:
-        """
-        check the variant has at least one non-support category assigned
-        Returns:
-            True if var has a non-support category assigned
-        """
-        return self.has_sample_categories or self.has_boolean_categories
-
-    @property
-    def is_classified(self) -> bool:
-        """
-        check for at least one assigned class, inc. support
-        Returns:
-            True if classified
-        """
-        return self.category_non_support or self.has_support
-
-    @property
-    def support_only(self) -> bool:
-        """
-        check that the variant is exclusively cat. support
-        Returns:
-            True if support only
-        """
-        return self.has_support and not self.category_non_support
-
-    def sample_support_only(self, sample_id: str) -> bool:
-        """
-        check that the variant is exclusively cat. support
-        check that this sample is missing from sample flags
-
-        Returns:
-            True if support only
-        """
-        return self.has_support and not (self.category_non_support or self.sample_categorised_check(sample_id))
-
-    def category_values(self, sample: str) -> set[str]:
-        """
-        get all variant categories
-        steps category flags down to booleans - true for this sample
-
-        Args:
-            sample (str): sample id
-
-        Returns:
-            set of all categories applied to this variant
-        """
-
-        # step down all category flags to boolean flags
-        categories: set[str] = set()
-        for category in self.sample_categories:
-            cat_samples = self.info[category]
-            if not isinstance(cat_samples, list):
-                raise TypeError(f'Sample categories should be a list: {cat_samples}')
-            if sample in cat_samples:
-                categories.add(category.removeprefix('categorysample'))
-
-        categories.update(
-            {bool_cat.replace('categoryboolean', '') for bool_cat in self.boolean_categories if self.info[bool_cat]},
-        )
-
-        if self.has_support:
-            categories.add('support')
-
-        return categories
-
-    def sample_categorised_check(self, sample_id: str) -> bool:
-        """
-        check if any *sample categories applied for this sample
-
-        Args:
-            sample_id (str): the specific sample ID to check
-
-        Returns:
-            bool: True if this sample features in any
-                  named-sample category, includes 'all'
-        """
-        for category in self.sample_categories:
-            cat_samples = self.info[category]
-            assert isinstance(cat_samples, list)
-            if any(sam in cat_samples for sam in [sample_id, 'all']):
-                return True
-
-        return False
-
-    def sample_category_check(self, sample_id: str, allow_support: bool = True) -> bool:
-        """
-        take a specific sample and check for assigned categories
-        optionally, include checks for support category
-
-        Args:
-            sample_id (str):
-            allow_support: (bool) also check for support
-
-        Returns:
-            True if the variant is categorised for this sample
-        """
-        big_cat = self.has_boolean_categories or self.sample_categorised_check(sample_id)
-        if allow_support:
-            return big_cat or self.has_support
-        return big_cat
 
     def check_ab_ratio(self, *args, **kwargs) -> set[str]:  # noqa: ARG002, ANN002, ANN003
         """
@@ -332,45 +202,19 @@ class AFSpecification(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
-# register all interchangeable models here
-VARIANT_MODELS = SmallVariant
-
-
-class ReportPanel(BaseModel):
-    """
-    simple storage for all the panels to present in tooltips
-    """
-
-    forced: dict[int, str] = Field(default_factory=dict)
-    matched: dict[int, str] = Field(default_factory=dict)
-
-
 class ReportVariant(BaseModel):
     """
     A variant passing MOI tests, to be reported
     """
 
     sample: str
-    var_data: VARIANT_MODELS
-    categories: set[str] = Field(default_factory=set)
-    date_of_phenotype_match: str | None = None
-    phenotype_labels: set[str] = Field(default_factory=set)
-
-    evidence_last_updated: str = Field(default=get_granular_date())
-    family: str = Field(default_factory=str)
-    # 'tagged' is seqr-compliant language
-    first_tagged: str = Field(default=get_granular_date())
+    var_data: SmallVariant
     flags: set[str] = Field(default_factory=set)
     gene: str = Field(default_factory=str)
     genotypes: dict[str, str] = Field(default_factory=dict)
-    independent: bool = Field(default=False)
     labels: set[str] = Field(default_factory=set)
-    panels: ReportPanel = Field(default_factory=ReportPanel)
-    phenotypes: list[PhenoPacketHpo] = Field(default_factory=list)
     reasons: set[str] = Field(default_factory=set)
     support_vars: set[str] = Field(default_factory=set)
-    # log whether there was an increase in ClinVar star rating since the last run
-    clinvar_increase: bool = Field(default=False)
 
     def __eq__(self, other):
         """
@@ -382,86 +226,13 @@ class ReportVariant(BaseModel):
         return self.var_data.coordinates < other.var_data.coordinates
 
 
-class PanelDetail(BaseModel):
-    """
-    A gene from PanelApp, combining all MOI and panel IDs
-    where the gene features on multiple panels
-    """
-
-    symbol: str
-    chrom: str = Field(default_factory=str)
-    all_moi: set[str] = Field(default_factory=set)
-    moi: str = Field(default_factory=str)
-    new: set[int] = Field(default_factory=set)
-    panels: set[int] = Field(default_factory=set)
-
-
-class PanelShort(BaseModel):
-    """
-    Short panel summary, used in the metadata section
-    """
-
-    id: int
-    name: str = Field(default_factory=str)
-    version: str = 'UNKNOWN'
-
-
-class PanelApp(BaseModel):
-    metadata: list[PanelShort] = Field(default_factory=list)
-    genes: dict[str, PanelDetail]
-    version: str = CURRENT_VERSION
-
-
-class CategoryMeta(BaseModel):
-    """
-    The mapping of category names to their display names
-    """
-
-    categories: dict[str, str] = Field(default=dict)
-
-
-class HistoricSampleVariant(BaseModel):
-    """ """
-
-    # categories here will be a dict of {categories: associated date first seen}
-    categories: dict[str, str]
-    # new variable to store the date the variant was first seen, static
-    first_tagged: str
-    support_vars: set[str] = Field(
-        default_factory=set,
-        description='supporting variants if this has been identified in a comp-het',
-    )
-    independent: bool = Field(default=True)
-    clinvar_stars: int | None = None
-    first_phenotype_tagged: str | None = None
-    phenotype_labels: set[str] = Field(default_factory=set)
-
-
-class HistoricVariants(BaseModel):
-    """
-    The model representing the state transition file
-    All relevant metadata relating to the available categories
-    Then a per-participant dict of variants, containing the categories
-    they have been assigned, date first seen, and supporting variants
-    """
-
-    metadata: CategoryMeta = Field(default_factory=CategoryMeta)
-    # dict - participant ID -> variant -> variant data
-    results: dict[str, dict[str, HistoricSampleVariant]] = Field(default_factory=dict)
-    version: str = CURRENT_VERSION
-
-
 class ResultMeta(BaseModel):
     """
     metadata for a result set
     """
 
-    categories: dict[str, str] = Field(default=dict)
     version: str = Field(default_factory=str)
-    family_breakdown: dict[str, int] = Field(default_factory=dict)
     input_file: str = Field(default_factory=str)
-    panels: list[PanelShort] = Field(default_factory=list)
-    run_datetime: str = Field(default=get_granular_date())
     projects: list[str] = Field(default_factory=list)
 
 
@@ -482,10 +253,7 @@ class ParticipantMeta(BaseModel):
     family_id: str
     members: dict[str, FamilyMembers] = Field(default_factory=dict)
     phenotypes: list[PhenoPacketHpo] = Field(default_factory=list)
-    panel_details: dict[int, str] = Field(default_factory=dict)
     solved: bool = Field(default=False)
-    present_in_small: bool = Field(default=False)
-    present_in_sv: bool = Field(default=False)
 
 
 class ParticipantResults(BaseModel):
@@ -504,27 +272,6 @@ class ResultData(BaseModel):
 
     results: dict[str, ParticipantResults] = Field(default_factory=dict)
     metadata: ResultMeta = Field(default_factory=ResultMeta)
-    version: str = CURRENT_VERSION
-
-
-class ModelVariant(BaseModel):
-    """
-    might be required for the VCF generator
-    """
-
-
-class ParticipantHPOPanels(BaseModel):
-    external_id: str = Field(default_factory=str)
-    family_id: str = Field(default_factory=str)
-    hpo_terms: list[PhenoPacketHpo] = Field(default_factory=list)
-    panels: set[int] = Field(default_factory=set)
-    matched_genes: set[str] = Field(default_factory=set)
-    matched_phenotypes: set[str] = Field(default_factory=set)
-
-
-class PhenotypeMatchedPanels(BaseModel):
-    samples: dict[str, ParticipantHPOPanels] = Field(default_factory=dict)
-    all_panels: set[int] = Field(default_factory=set)
     version: str = CURRENT_VERSION
 
 
