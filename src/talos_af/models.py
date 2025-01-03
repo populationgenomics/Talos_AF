@@ -253,7 +253,6 @@ class ParticipantMeta(BaseModel):
     family_id: str
     members: dict[str, FamilyMembers] = Field(default_factory=dict)
     phenotypes: list[PhenoPacketHpo] = Field(default_factory=list)
-    solved: bool = Field(default=False)
 
 
 class ParticipantResults(BaseModel):
@@ -273,12 +272,6 @@ class ResultData(BaseModel):
     results: dict[str, ParticipantResults] = Field(default_factory=dict)
     metadata: ResultMeta = Field(default_factory=ResultMeta)
     version: str = CURRENT_VERSION
-
-
-class MiniVariant(BaseModel):
-    categories: set[str] = Field(default_factory=set)
-    support_vars: set[str] = Field(default_factory=set)
-    independent: bool = Field(default=True)
 
 
 class PedigreeMember(BaseModel):
