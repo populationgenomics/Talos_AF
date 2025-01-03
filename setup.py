@@ -36,12 +36,14 @@ setup(
     package_dir={'': 'src'},
     install_requires=[
         'bump2version>=1.0.1',
+        'cloudpathlib[all]>=0.18.1',
         'cyvcf2==0.31.1',
         'hail==0.2.133',
         'httpx==0.27.0',
         'pre-commit>=3.7',
         'pydantic==2.5.2',
         'ruff>=0.4.7',
+        'tenacity>=9.0.0',
         'toml==0.10.2',
     ],
     extras_require={

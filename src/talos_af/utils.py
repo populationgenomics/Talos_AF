@@ -21,22 +21,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential_jitter, retry_i
 
 from talos_af.config import config_retrieve
 from talos_af.models import (
-    VARIANT_MODELS,
-    CategoryMeta,
     Coordinates,
     FileTypes,
-    HistoricSampleVariant,
-    HistoricVariants,
-    PanelApp,
-    Pedigree,
-    PedigreeMember,
-    PhenotypeMatchedPanels,
-    ResultData,
     SmallVariant,
-    StructuralVariant,
-    lift_up_model_version,
 )
-from talos_af.static_values import get_granular_date, get_logger
+from talos_af.logger import get_logger
 
 HOMREF: int = 0
 HETALT: int = 1
@@ -52,15 +41,7 @@ X_CHROMOSOME = {'X'}
 TIMEZONE = zoneinfo.ZoneInfo('Australia/Brisbane')
 TODAY = datetime.now(tz=TIMEZONE).strftime('%Y-%m-%d_%H:%M')
 
-# most lenient to most conservative
-# usage = if we have two MOIs for the same gene, take the broadest
-ORDERED_MOIS = ['Mono_And_Biallelic', 'Monoallelic', 'Hemi_Mono_In_Female', 'Hemi_Bi_In_Female', 'Biallelic']
-IRRELEVANT_MOI = {'unknown', 'other'}
-
 DATE_RE = re.compile(r'\d{4}-\d{2}-\d{2}')
-
-# this just saves some typing
-MEMBER_LOOKUP_DICT = {'0': None}
 
 
 def chunks(iterable, chunk_size):
@@ -220,9 +201,6 @@ def create_small_variant(var: cyvcf2.Variant, samples: list[str]):
 
     het_samples, hom_samples = get_non_ref_samples(variant=var, samples=samples)
 
-    # organise PM5
-    info = organise_pm5(info)
-
     # set the class attributes
     boolean_categories = [key for key in info if key.startswith('categoryboolean')]
     sample_categories = [key for key in info if key.startswith('categorysample')]
@@ -248,8 +226,6 @@ def create_small_variant(var: cyvcf2.Variant, samples: list[str]):
         info=info,
         het_samples=het_samples,
         hom_samples=hom_samples,
-        boolean_categories=boolean_categories,
-        sample_categories=sample_categories,
         sample_support=support_categories,
         phased=phased,
         depths=depths,
@@ -260,8 +236,8 @@ def create_small_variant(var: cyvcf2.Variant, samples: list[str]):
 
 # CompHetDict structure: {sample: {variant_string: [variant, ...]}}
 # sample: string, e,g, CGP12345
-CompHetDict = dict[str, dict[str, list[VARIANT_MODELS]]]
-GeneDict = dict[str, list[VARIANT_MODELS]]
+CompHetDict = dict[str, dict[str, list[SmallVariant]]]
+GeneDict = dict[str, list[SmallVariant]]
 
 
 def canonical_contigs_from_vcf(reader) -> set[str]:
@@ -286,7 +262,6 @@ def canonical_contigs_from_vcf(reader) -> set[str]:
 def gather_gene_dict_from_contig(
     contig: str,
     variant_source,
-    sv_sources: list | None = None,
 ) -> GeneDict:
     """
     takes a cyvcf2.VCFReader instance, and a specified chromosome
@@ -297,7 +272,6 @@ def gather_gene_dict_from_contig(
     Args:
         contig (): contig name from VCF header
         variant_source (): the VCF reader instance
-        sv_sources (): an optional list of SV VCFs
 
     Returns:
         A lookup in the form
@@ -307,15 +281,6 @@ def gather_gene_dict_from_contig(
             ...
         }
     """
-    if sv_sources is None:
-        sv_sources = []
-    if bl_file := config_retrieve(['GeneratePanelData', 'blacklist'], ''):
-        blacklist = read_json_from_path(bl_file, default=[])
-    else:
-        blacklist = []
-
-    if not isinstance(blacklist, list):
-        raise TypeError(f'Blacklist should be a list: {blacklist}')
 
     # a dict to allow lookup of variants on this whole chromosome
     contig_variants = 0
@@ -329,33 +294,11 @@ def gather_gene_dict_from_contig(
             samples=variant_source.samples,
         )
 
-        if small_variant.coordinates.string_format in blacklist:
-            get_logger().info(f'Skipping blacklisted variant: {small_variant.coordinates.string_format}')
-            continue
-
-        # if unclassified, skip the whole variant
-        if not small_variant.is_classified:
-            continue
-
         # update the variant count
         contig_variants += 1
 
         # update the gene index dictionary
         contig_dict[small_variant.info.get('gene_id')].append(small_variant)
-
-    for sv_source in sv_sources:
-        structural_variants = 0
-        for variant in sv_source(contig):
-            # create an abstract SV variant
-            structural_variant = create_structural_variant(var=variant, samples=sv_source.samples)
-
-            # update the variant count
-            structural_variants += 1
-
-            # update the gene index dictionary
-            contig_dict[structural_variant.info.get('gene_id')].append(structural_variant)
-
-        get_logger().info(f'Contig {contig} contained {structural_variants} SVs')
 
     get_logger().info(f'Contig {contig} contained {contig_variants} variants, in {len(contig_dict)} genes')
 
@@ -391,9 +334,7 @@ def read_json_from_path(read_path: str | None = None, default: Any = None, retur
     with read_anypath.open() as handle:
         json_data = json.load(handle)
         if return_model:
-            # potentially walk-up model version
-            model_data = lift_up_model_version(json_data, return_model)
-            return return_model.model_validate(model_data)
+            return return_model.model_validate(json_data)
         return json_data
 
 
@@ -450,7 +391,8 @@ def extract_csq(csq_contents: str) -> list[dict]:
     return txc_dict
 
 
-def find_comp_hets(var_list: list[VARIANT_MODELS], pedigree: Pedigree) -> CompHetDict:
+# todo: reinstate peds pedigree reading
+def find_comp_hets(var_list: list[SmallVariant], pedigree) -> CompHetDict:
     """
     manual implementation to find compound hets
     variants provided in the format
@@ -461,7 +403,7 @@ def find_comp_hets(var_list: list[VARIANT_MODELS], pedigree: Pedigree) -> CompHe
     {sample: {var_as_string: [partner_variant, ...]}}
 
     Args:
-        var_list (list[VARIANT_MODELS]): all variants in this gene
+        var_list (list[SmallVariant]): all variants in this gene
         pedigree (): Pedigree
     """
 
