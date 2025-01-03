@@ -40,6 +40,7 @@ setup(
         'cyvcf2==0.31.1',
         'hail==0.2.133',
         'httpx==0.27.0',
+        'peds==1.3.2',
         'pre-commit>=3.7',
         'pydantic==2.5.2',
         'ruff>=0.4.7',

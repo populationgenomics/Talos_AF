@@ -15,7 +15,7 @@ from itertools import chain, combinations_with_replacement, islice
 from pathlib import Path
 from typing import Any
 
-import cyvcf2
+from cyvcf2 import Variant, VCF
 from cloudpathlib.anypath import to_anypath
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter, retry_if_exception_type
 
@@ -182,7 +182,7 @@ def get_phase_data(samples, var) -> dict[str, dict[int, str]]:
     return dict(phased_dict)
 
 
-def create_small_variant(var: cyvcf2.Variant, samples: list[str]):
+def create_small_variant(var: Variant, samples: list[str]):
     """
     takes a small variant and creates a Model from it
 
@@ -240,38 +240,13 @@ CompHetDict = dict[str, dict[str, list[SmallVariant]]]
 GeneDict = dict[str, list[SmallVariant]]
 
 
-def canonical_contigs_from_vcf(reader) -> set[str]:
+def gather_gene_dict(vcf_path: str) -> GeneDict:
     """
-    read the header fields from the VCF handle
-    return a set of all 'canonical' contigs
+    takes a path to a VCF, uses cyvcf2 to read it
+    iterates over all variants, and builds a lookup indexed on gene ID
 
     Args:
-        reader (cyvcf2.VCFReader):
-    """
-
-    # contig matching regex - remove all HLA/decoy/unknown
-    contig_re = re.compile(r'^(chr)?[0-9XYMT]{1,2}$')
-
-    return {
-        contig['ID']
-        for contig in reader.header_iter()
-        if contig['HeaderType'] == 'CONTIG' and re.match(contig_re, contig['ID'])
-    }
-
-
-def gather_gene_dict_from_contig(
-    contig: str,
-    variant_source,
-) -> GeneDict:
-    """
-    takes a cyvcf2.VCFReader instance, and a specified chromosome
-    iterates over all variants in the region, and builds a lookup
-
-    optionally takes a second VCF and incorporates into same dict
-
-    Args:
-        contig (): contig name from VCF header
-        variant_source (): the VCF reader instance
+        vcf_path (str): path to the VCF
 
     Returns:
         A lookup in the form
@@ -282,27 +257,28 @@ def gather_gene_dict_from_contig(
         }
     """
 
-    # a dict to allow lookup of variants on this whole chromosome
-    contig_variants = 0
-    contig_dict = defaultdict(list)
+    # a dict to allow lookup of variants by gene
+    total_variants = 0
+    gene_dict = defaultdict(list)
 
-    # iterate over all variants on this contig and store by unique key
-    # if contig has no variants, prints an error and returns []
-    for variant in variant_source(contig):
+    vcf_reader = VCF(vcf_path)
+
+    # iterate over all variants in this VCF and store by gene ID
+    for variant in vcf_reader:
         small_variant = create_small_variant(
             var=variant,
-            samples=variant_source.samples,
+            samples=vcf_reader.samples,
         )
 
         # update the variant count
-        contig_variants += 1
+        total_variants += 1
 
         # update the gene index dictionary
-        contig_dict[small_variant.info.get('gene_id')].append(small_variant)
+        gene_dict[small_variant.info.get('gene_id')].append(small_variant)
 
-    get_logger().info(f'Contig {contig} contained {contig_variants} variants, in {len(contig_dict)} genes')
+    get_logger().info(f'VCF {vcf_path} contained {total_variants} variants, in {len(gene_dict)} genes')
 
-    return contig_dict
+    return gene_dict
 
 
 def read_json_from_path(read_path: str | None = None, default: Any = None, return_model: Any = None) -> Any:

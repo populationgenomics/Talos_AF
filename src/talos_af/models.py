@@ -3,7 +3,7 @@ A home for all data models used in Talos
 """
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -202,28 +202,39 @@ class AFSpecification(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
-class ReportVariant(BaseModel):
+class MinimalVariant(BaseModel):
+    """
+    A minimal representation of a variant for reporting purposes
+    """
+
+    gene: str
+    coordinates: Coordinates = Field(repr=True)
+    info: dict[str, Any] = Field(default_factory=dict)
+    genotype: str = Field(default_factory=str)
+
+
+class ReportableVariant(BaseModel):
     """
     A variant passing MOI tests, to be reported
+    2 components - the mandatory first variant, and optionally the second variant
     """
 
     sample: str
-    var_data: SmallVariant
+    var_1: MinimalVariant
+    var_2: Optional[MinimalVariant] = None
+    gene: str
+    rule: str
     flags: set[str] = Field(default_factory=set)
-    gene: str = Field(default_factory=str)
-    genotypes: dict[str, str] = Field(default_factory=dict)
     labels: set[str] = Field(default_factory=set)
-    reasons: set[str] = Field(default_factory=set)
-    support_vars: set[str] = Field(default_factory=set)
 
     def __eq__(self, other):
         """
         makes reported variants comparable
         """
-        return self.sample == other.sample and self.var_data.coordinates == other.var_data.coordinates
+        return self.sample == other.sample and self.var_1.coordinates == other.var_1.coordinates
 
     def __lt__(self, other):
-        return self.var_data.coordinates < other.var_data.coordinates
+        return self.var_1.coordinates < other.var_1.coordinates
 
 
 class ResultMeta(BaseModel):
@@ -233,7 +244,6 @@ class ResultMeta(BaseModel):
 
     version: str = Field(default_factory=str)
     input_file: str = Field(default_factory=str)
-    projects: list[str] = Field(default_factory=list)
 
 
 class MemberSex(Enum):
@@ -260,7 +270,7 @@ class ParticipantResults(BaseModel):
     A representation of a result set
     """
 
-    variants: list[ReportVariant] = Field(default_factory=list)
+    variants: list[ReportableVariant] = Field(default_factory=list)
     metadata: ParticipantMeta = Field(default_factory=ParticipantMeta)
 
 
