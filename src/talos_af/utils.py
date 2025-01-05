@@ -5,7 +5,6 @@ HTTPX requests are backoff-wrapped using tenaticy
 https://tenacity.readthedocs.io/en/latest/
 """
 
-import httpx
 import json
 import re
 import zoneinfo
@@ -15,12 +14,14 @@ from itertools import chain, combinations_with_replacement, islice
 from pathlib import Path
 from typing import Any
 
-from cyvcf2 import Variant, VCF
+import httpx
 from cloudpathlib.anypath import to_anypath
+from cyvcf2 import VCF, Variant
 from peds.family import Family
-from tenacity import retry, stop_after_attempt, wait_exponential_jitter, retry_if_exception_type
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from talos_af.config import config_retrieve
+from talos_af.logger import get_logger
 from talos_af.models import (
     Coordinates,
     FileTypes,
@@ -28,7 +29,6 @@ from talos_af.models import (
     PedigreeMember,
     TalosVariant,
 )
-from talos_af.logger import get_logger
 
 HOMREF: int = 0
 HETALT: int = 1
@@ -353,7 +353,7 @@ def extract_csq(csq_contents: str) -> list[dict]:
 
 
 # todo: reinstate peds pedigree reading
-def find_comp_hets(var_list: list[TalosVariant], pedigree) -> CompHetDict:
+def find_comp_hets(var_list: list[TalosVariant], pedigree: Pedigree) -> CompHetDict:
     """
     manual implementation to find compound hets
     variants provided in the format
@@ -397,7 +397,6 @@ def find_comp_hets(var_list: list[TalosVariant], pedigree) -> CompHetDict:
                 comp_het_results[sample].setdefault(var_2.coordinates.string_format, []).append(var_1)
 
     return comp_het_results
-
 
 
 def make_flexible_pedigree(ped_data: list[Family]) -> Pedigree:

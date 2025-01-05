@@ -5,7 +5,6 @@ This is a placeholder, completely base class to prevent circular imports
 import logging
 import sys
 import zoneinfo
-from datetime import datetime
 from logging import FileHandler, StreamHandler
 
 TIMEZONE = zoneinfo.ZoneInfo('Australia/Brisbane')

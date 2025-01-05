@@ -13,8 +13,6 @@ from itertools import combinations_with_replacement
 
 from peds import open_ped
 
-from talos_af.config import config_retrieve
-from talos_af.logger import get_logger
 from talos_af.models import (
     AFCategoryC,
     AFSpecification,
@@ -42,7 +40,7 @@ def cli_main():
         input_vcf=args.input,
         output=args.output,
         pedigree=args.pedigree,
-        af_spec=args.af_spec,
+        af_spec_file=args.af_spec,
     )
 
 
@@ -77,7 +75,7 @@ def type_a_gene(gene: str, variants: list[TalosVariant]) -> list[ReportableVaria
                     var_1=minrep_var,
                     gene=gene,
                     rule='Type A',
-                )
+                ),
             )
 
         for sample in variant.hom_samples:
@@ -93,7 +91,7 @@ def type_a_gene(gene: str, variants: list[TalosVariant]) -> list[ReportableVaria
                     var_1=minrep_var,
                     gene=gene,
                     rule='Type A',
-                )
+                ),
             )
 
     return outgoing_results
@@ -129,13 +127,12 @@ def type_b_gene(gene: str, variants: list[TalosVariant], pedigree: Pedigree) -> 
                     var_1=minrep_var,
                     gene=gene,
                     rule='Type B (Hom)',
-                )
+                ),
             )
 
     # generate all possible comp-het permutations
     for variant_1, variant_2 in combinations_with_replacement(variants, 2):
         for sample in variant_1.het_samples & variant_2.het_samples:
-
             # todo check for phasing and male on sex chromosomes
 
             minrep_var_1 = MinimalVariant(
@@ -177,11 +174,19 @@ def type_c_gene(gene: str, af_details: AFCategoryC, variants: list[TalosVariant]
     """
 
     result_list: list[ReportableVariant] = []
+    # todo... everything
+    return result_list
 
 
-def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
+def main(input_vcf: str, output: str, pedigree: str, af_spec_file: str):
     """
     Read the VCF, and write the results to a file
+
+    Args:
+        input_vcf ():
+        output ():
+        pedigree ():
+        af_spec_file ():
     """
 
     # read the pedigree file
@@ -189,7 +194,7 @@ def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
     pedigree_object = make_flexible_pedigree(pedigree_data)
 
     # read the AF specification
-    af_spec = read_json_from_path(af_spec, return_model=AFSpecification)
+    af_spec = read_json_from_path(af_spec_file, return_model=AFSpecification)
 
     # get a dict of all variants indexed by gene
     gene_dict = gather_gene_dict(input_vcf)
@@ -201,8 +206,11 @@ def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
         # get results from the variants, spec, and pedigree
         if gene_af_spec.a:
             results.extend(type_a_gene(gene, variants))
+
         if gene_af_spec.b:
             results.extend(type_b_gene(gene, variants, pedigree=pedigree_object))
+
+        # then all of the wild per-gene rule sets
         if gene_af_spec.c:
             results.extend(type_c_gene(gene, gene_af_spec.c, variants))
 

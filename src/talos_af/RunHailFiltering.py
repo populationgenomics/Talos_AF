@@ -352,7 +352,7 @@ def cli_main():
     main(
         mt_path=args.input,
         vcf_out=args.output,
-        af_spec=args.af_spec,
+        af_spec_file=args.af_spec,
         clinvar=args.clinvar,
         checkpoint=args.checkpoint,
     )
@@ -361,7 +361,7 @@ def cli_main():
 def main(
     mt_path: str,
     vcf_out: str,
-    af_spec: str,
+    af_spec_file: str,
     clinvar: str,
     checkpoint: str | None = None,
 ):
@@ -371,7 +371,7 @@ def main(
     Args:
         mt_path (str): Location of the input MT
         vcf_out (str): where to write VCF out
-        af_spec (str): location to a JSON containing AF specification
+        af_spec_file (str): location to a JSON containing AF specification
         clinvar (str): location to a ClinVar HT, or unspecified
         checkpoint (str): path to checkpoint data to - serves as checkpoint trigger
     """
@@ -407,7 +407,7 @@ def main(
             mt = generate_a_checkpoint(mt, f'{checkpoint}_repartitioned')
 
     # read in the AF specification
-    af_spec = read_json_from_path(af_spec, return_model=AFSpecification)
+    af_spec = read_json_from_path(af_spec_file, return_model=AFSpecification)
 
     # pull out the relevant genes from the AFSpecification, cast as a hl.set
     relevant_gene_expression = hl.set(set(af_spec.genes.keys()))

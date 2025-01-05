@@ -4,7 +4,6 @@ setup.py for the talos package
 
 from setuptools import find_packages, setup
 
-
 with open('README.md', encoding='utf-8') as handle:
     readme = handle.read()
 
