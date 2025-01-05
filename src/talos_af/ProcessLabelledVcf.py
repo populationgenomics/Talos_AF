@@ -19,11 +19,13 @@ from talos_af.models import (
     AFCategoryC,
     AFSpecification,
     MinimalVariant,
+    Pedigree,
     ReportableVariant,
-    SmallVariant,
+    TalosVariant,
 )
 from talos_af.utils import (
     gather_gene_dict,
+    make_flexible_pedigree,
     read_json_from_path,
 )
 
@@ -44,13 +46,13 @@ def cli_main():
     )
 
 
-def type_a_gene(gene: str, variants: list[SmallVariant]) -> list[ReportableVariant]:
+def type_a_gene(gene: str, variants: list[TalosVariant]) -> list[ReportableVariant]:
     """
     simplest version - we check for any variant (dominant is tolerated)
 
     Args:
         gene (str): gene ID
-        variants (list[SmallVariant]): list of variants to check
+        variants (list[TalosVariant]): list of variants to check
 
     Returns:
         list[ReportableVariant]: a list of all the variants which are type A (monoallelic/dominant)
@@ -97,13 +99,14 @@ def type_a_gene(gene: str, variants: list[SmallVariant]) -> list[ReportableVaria
     return outgoing_results
 
 
-def type_b_gene(gene: str, variants: list[SmallVariant]) -> list[ReportableVariant]:
+def type_b_gene(gene: str, variants: list[TalosVariant], pedigree: Pedigree) -> list[ReportableVariant]:
     """
     fairly simple version - we check for any variant with 2-hits (hom or comp-het)
 
     Args:
         gene (str): gene ID
-        variants (list[SmallVariant]): list of variants to check
+        variants (list[TalosVariant]): list of variants to check
+        pedigree (Pedigree): pedigree as read by peds
 
     Returns:
         list[ReportableVariant]: a list of all the variants which are type B (recessive/bi-allelic)
@@ -131,34 +134,36 @@ def type_b_gene(gene: str, variants: list[SmallVariant]) -> list[ReportableVaria
 
     # generate all possible comp-het permutations
     for variant_1, variant_2 in combinations_with_replacement(variants, 2):
-        if common_samples := variant_1.het_samples & variant_2.het_samples:
-            for sample in common_samples:
-                minrep_var_1 = MinimalVariant(
+        for sample in variant_1.het_samples & variant_2.het_samples:
+
+            # todo check for phasing and male on sex chromosomes
+
+            minrep_var_1 = MinimalVariant(
+                gene=gene,
+                coordinates=variant_1.coordinates,
+                info=variant_1.info,
+                genotype='Het',
+            )
+            minrep_var_2 = MinimalVariant(
+                gene=gene,
+                coordinates=variant_2.coordinates,
+                info=variant_2.info,
+                genotype='Het',
+            )
+            outgoing_results.append(
+                ReportableVariant(
+                    sample=sample,
+                    var_1=minrep_var_1,
+                    var_2=minrep_var_2,
                     gene=gene,
-                    coordinates=variant_1.coordinates,
-                    info=variant_1.info,
-                    genotype='Het',
-                )
-                minrep_var_2 = MinimalVariant(
-                    gene=gene,
-                    coordinates=variant_2.coordinates,
-                    info=variant_2.info,
-                    genotype='Het',
-                )
-                outgoing_results.append(
-                    ReportableVariant(
-                        sample=sample,
-                        var_1=minrep_var_1,
-                        var_2=minrep_var_2,
-                        gene=gene,
-                        rule='Type B (Comp-Het)',
-                    ),
-                )
+                    rule='Type B (Comp-Het)',
+                ),
+            )
 
     return outgoing_results
 
 
-def type_c_gene(gene: str, af_details: AFCategoryC, variants: list[SmallVariant]) -> list[ReportableVariant]:
+def type_c_gene(gene: str, af_details: AFCategoryC, variants: list[TalosVariant]) -> list[ReportableVariant]:
     """
     For genes assigned a category C, we check for a range of specific conditions
 
@@ -179,8 +184,9 @@ def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
     Read the VCF, and write the results to a file
     """
 
-    # read the pedigree file - why?
-    pedigree = open_ped(pedigree)
+    # read the pedigree file
+    pedigree_data = open_ped(pedigree)
+    pedigree_object = make_flexible_pedigree(pedigree_data)
 
     # read the AF specification
     af_spec = read_json_from_path(af_spec, return_model=AFSpecification)
@@ -196,7 +202,7 @@ def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
         if gene_af_spec.a:
             results.extend(type_a_gene(gene, variants))
         if gene_af_spec.b:
-            results.extend(type_b_gene(gene, variants))
+            results.extend(type_b_gene(gene, variants, pedigree=pedigree_object))
         if gene_af_spec.c:
             results.extend(type_c_gene(gene, gene_af_spec.c, variants))
 

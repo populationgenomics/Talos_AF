@@ -246,3 +246,24 @@ class AFResult(BaseModel):
     results: dict[str, ParticipantResults] = Field(default_factory=dict)
     metadata: ResultMeta = Field(default_factory=ResultMeta)
     version: str = CURRENT_VERSION
+
+
+class PedigreeMember(BaseModel):
+    """
+    This will be a more searchable implementation of the peds pedigree
+    """
+
+    family: str
+    id: str
+    mother: str | None = None
+    father: str | None = None
+    sex: str
+    affected: str
+    ext_id: str = 'Missing'
+    hpo_terms: list[PhenoPacketHpo] = Field(default_factory=list)
+
+
+class Pedigree(BaseModel):
+    members: list[PedigreeMember] = Field(default_factory=list)
+    by_family: dict[str, list[PedigreeMember]] = Field(default_factory=dict)
+    by_id: dict[str, PedigreeMember] = Field(default_factory=dict)

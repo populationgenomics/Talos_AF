@@ -17,12 +17,15 @@ from typing import Any
 
 from cyvcf2 import Variant, VCF
 from cloudpathlib.anypath import to_anypath
+from peds.family import Family
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter, retry_if_exception_type
 
 from talos_af.config import config_retrieve
 from talos_af.models import (
     Coordinates,
     FileTypes,
+    Pedigree,
+    PedigreeMember,
     TalosVariant,
 )
 from talos_af.logger import get_logger
@@ -42,6 +45,9 @@ TIMEZONE = zoneinfo.ZoneInfo('Australia/Brisbane')
 TODAY = datetime.now(tz=TIMEZONE).strftime('%Y-%m-%d_%H:%M')
 
 DATE_RE = re.compile(r'\d{4}-\d{2}-\d{2}')
+
+# this just saves some typing
+MEMBER_LOOKUP_DICT = {'0': None}
 
 
 def chunks(iterable, chunk_size):
@@ -182,7 +188,7 @@ def get_phase_data(samples, var) -> dict[str, dict[int, str]]:
     return dict(phased_dict)
 
 
-def create_small_variant(var: Variant, samples: list[str]):
+def create_variant(var: Variant, samples: list[str]):
     """
     takes a small variant and creates a Model from it
 
@@ -244,7 +250,7 @@ def gather_gene_dict(vcf_path: str) -> GeneDict:
 
     # iterate over all variants in this VCF and store by gene ID
     for variant in vcf_reader:
-        small_variant = create_small_variant(
+        small_variant = create_variant(
             var=variant,
             samples=vcf_reader.samples,
         )
@@ -391,3 +397,38 @@ def find_comp_hets(var_list: list[TalosVariant], pedigree) -> CompHetDict:
                 comp_het_results[sample].setdefault(var_2.coordinates.string_format, []).append(var_1)
 
     return comp_het_results
+
+
+
+def make_flexible_pedigree(ped_data: list[Family]) -> Pedigree:
+    """
+    takes the representation offered by peds and reshapes it to be searchable
+    this is really just one short step from writing my own implementation...
+
+    Args:
+        ped_data (str): pedigree as read by peds
+
+    Returns:
+        a searchable representation of the ped file
+    """
+    new_ped = Pedigree()
+    for family in ped_data:
+        for member in family:
+            me = PedigreeMember(
+                family=member.family,
+                id=member.id,
+                mother=MEMBER_LOOKUP_DICT.get(member.mom, member.mom),
+                father=MEMBER_LOOKUP_DICT.get(member.dad, member.dad),
+                sex=member.sex,
+                affected=member.phenotype,
+            )
+
+            # add as a member
+            new_ped.members.append(me)
+
+            # add to a lookup
+            new_ped.by_id[me.id] = me
+
+            # add to a list of members in this family
+            new_ped.by_family.setdefault(me.family, []).append(me)
+    return new_ped
