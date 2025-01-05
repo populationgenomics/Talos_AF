@@ -75,7 +75,7 @@ class Coordinates(BaseModel):
         return False
 
 
-class VariantCommon(BaseModel):
+class TalosVariant(BaseModel):
     """
     the abstracted representation of a variant from any source
     """
@@ -84,47 +84,7 @@ class VariantCommon(BaseModel):
     info: dict[str, str | int | float | list[str] | list[float] | dict[str, str] | bool] = Field(default_factory=dict)
     het_samples: set[str] = Field(default_factory=set, exclude=True)
     hom_samples: set[str] = Field(default_factory=set, exclude=True)
-    sample_support: list[str] = Field(default_factory=list, exclude=True)
     phased: dict = Field(default_factory=dict)
-
-    def __str__(self):
-        return repr(self)
-
-    def __lt__(self, other):
-        return self.coordinates < other.coordinates
-
-    def __eq__(self, other):
-        return self.coordinates == other.coordinates
-
-    def check_ab_ratio(self, *args, **kwargs) -> set[str]:  # noqa: ARG002, ANN002, ANN003
-        """
-        dummy method for AB ratio checking - not implemented for SVs
-        """
-        return set()
-
-    def get_sample_flags(self, *args, **kwargs) -> set[str]:  # noqa: ARG002, ANN002, ANN003
-        """
-        dummy method for flag checking - not implemented for SVs (yet)
-        """
-        return set()
-
-    def check_read_depth(self, *args, **kwargs) -> set[str]:  # noqa: ARG002, ANN002, ANN003
-        """
-        dummy method for read depth checking - not implemented for SVs
-        """
-        return set()
-
-
-class SmallVariant(VariantCommon):
-    """
-    a representation of a small variant
-    note that transcript_consequences is not optional
-    we require that something specific to SmallVariant(s) is mandatory
-    this is in order to correctly deserialise the Small/Structural objects
-    into the appropriate types. If it is optional, Pydantic can coerce
-    everything as a SmallVariant
-    """
-
     depths: dict[str, int] = Field(default_factory=dict, exclude=True)
     ab_ratios: dict[str, float] = Field(default_factory=dict, exclude=True)
     transcript_consequences: list[dict[str, str | float | int]]
@@ -171,6 +131,15 @@ class SmallVariant(VariantCommon):
             return {'AB Ratio'}
         return set()
 
+    def __str__(self):
+        return repr(self)
+
+    def __lt__(self, other):
+        return self.coordinates < other.coordinates
+
+    def __eq__(self, other):
+        return self.coordinates == other.coordinates
+
 
 class AFCategoryC(BaseModel):
     """
@@ -179,10 +148,13 @@ class AFCategoryC(BaseModel):
 
     # a list of specific individual variants
     only_variants: Optional[list[str]] = Field(default=None)
+
     # a list of specific individual protein consequences
     only_protein_consequences: Optional[list[str]] = Field(default=None)
+
     # a list of specific individual disorders, only ClinVar entries with these annotated disorders are relevant
     clinvar_disorders: Optional[list[str]] = Field(default=None)
+
     # only report on high impact/clinvar path on these transcripts
     only_transcripts: Optional[list[str]] = Field(default=None)
 
@@ -252,16 +224,8 @@ class MemberSex(Enum):
     UNKNOWN = 'unknown'
 
 
-class FamilyMembers(BaseModel):
-    affected: bool = Field(default=False)
-    ext_id: str = Field(default_factory=str)
-    sex: MemberSex = Field(default=MemberSex.UNKNOWN)
-
-
 class ParticipantMeta(BaseModel):
     ext_id: str
-    family_id: str
-    members: dict[str, FamilyMembers] = Field(default_factory=dict)
     phenotypes: list[PhenoPacketHpo] = Field(default_factory=list)
 
 
@@ -274,7 +238,7 @@ class ParticipantResults(BaseModel):
     metadata: ParticipantMeta = Field(default_factory=ParticipantMeta)
 
 
-class ResultData(BaseModel):
+class AFResult(BaseModel):
     """
     A representation of a result set
     """
@@ -282,18 +246,3 @@ class ResultData(BaseModel):
     results: dict[str, ParticipantResults] = Field(default_factory=dict)
     metadata: ResultMeta = Field(default_factory=ResultMeta)
     version: str = CURRENT_VERSION
-
-
-class PedigreeMember(BaseModel):
-    """
-    This will be a more searchable implementation of the peds pedigree
-    """
-
-    family: str
-    id: str
-    mother: str | None = None
-    father: str | None = None
-    sex: str
-    affected: str
-    ext_id: str = 'Missing'
-    hpo_terms: list[PhenoPacketHpo] = Field(default_factory=list)

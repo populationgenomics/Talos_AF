@@ -16,6 +16,7 @@ from peds import open_ped
 from talos_af.config import config_retrieve
 from talos_af.logger import get_logger
 from talos_af.models import (
+    AFCategoryC,
     AFSpecification,
     MinimalVariant,
     ReportableVariant,
@@ -157,12 +158,28 @@ def type_b_gene(gene: str, variants: list[SmallVariant]) -> list[ReportableVaria
     return outgoing_results
 
 
+def type_c_gene(gene: str, af_details: AFCategoryC, variants: list[SmallVariant]) -> list[ReportableVariant]:
+    """
+    For genes assigned a category C, we check for a range of specific conditions
+
+    Args:
+        gene ():
+        af_details ():
+        variants ():
+
+    Returns:
+
+    """
+
+    result_list: list[ReportableVariant] = []
+
+
 def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
     """
     Read the VCF, and write the results to a file
     """
 
-    # read the pedigree file
+    # read the pedigree file - why?
     pedigree = open_ped(pedigree)
 
     # read the AF specification
@@ -176,7 +193,12 @@ def main(input_vcf: str, output: str, pedigree: str, af_spec: str):
         gene_af_spec = af_spec.genes.get(gene)
 
         # get results from the variants, spec, and pedigree
-        results.extend(...)
+        if gene_af_spec.a:
+            results.extend(type_a_gene(gene, variants))
+        if gene_af_spec.b:
+            results.extend(type_b_gene(gene, variants))
+        if gene_af_spec.c:
+            results.extend(type_c_gene(gene, gene_af_spec.c, variants))
 
 
 if __name__ == '__main__':

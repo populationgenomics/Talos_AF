@@ -23,7 +23,7 @@ from talos_af.config import config_retrieve
 from talos_af.models import (
     Coordinates,
     FileTypes,
-    SmallVariant,
+    TalosVariant,
 )
 from talos_af.logger import get_logger
 
@@ -195,38 +195,17 @@ def create_small_variant(var: Variant, samples: list[str]):
     depths: dict[str, int] = dict(zip(samples, map(int, var.gt_depths)))
     info: dict[str, Any] = {x.lower(): y for x, y in var.INFO} | {'seqr_link': coordinates.string_format}
 
-    # optionally - ignore some categories from this analysis
-    if ignore_cats := config_retrieve(['ValidateMOI', 'ignore_categories'], []):
-        info = {key: val for key, val in info.items() if key not in ignore_cats}
-
     het_samples, hom_samples = get_non_ref_samples(variant=var, samples=samples)
-
-    # set the class attributes
-    boolean_categories = [key for key in info if key.startswith('categoryboolean')]
-    sample_categories = [key for key in info if key.startswith('categorysample')]
-    support_categories = [key for key in info if key.startswith('categorysupport')]
-
-    # overwrite with true booleans
-    for cat in support_categories + boolean_categories:
-        info[cat] = info.get(cat, 0) == 1
-
-    # sample categories are a set of strings or 'missing'
-    for sam_cat in sample_categories:
-        if isinstance(info[sam_cat], str):
-            info[sam_cat] = info[sam_cat].split(',') if info[sam_cat] != 'missing' else set()
-        if isinstance(info[sam_cat], list):
-            info[sam_cat] = set(info[sam_cat])
 
     phased = get_phase_data(samples, var)
     ab_ratios = dict(zip(samples, map(float, var.gt_alt_freqs)))
     transcript_consequences = extract_csq(csq_contents=info.pop('csq', ''))
 
-    return SmallVariant(
+    return TalosVariant(
         coordinates=coordinates,
         info=info,
         het_samples=het_samples,
         hom_samples=hom_samples,
-        sample_support=support_categories,
         phased=phased,
         depths=depths,
         ab_ratios=ab_ratios,
@@ -236,8 +215,8 @@ def create_small_variant(var: Variant, samples: list[str]):
 
 # CompHetDict structure: {sample: {variant_string: [variant, ...]}}
 # sample: string, e,g, CGP12345
-CompHetDict = dict[str, dict[str, list[SmallVariant]]]
-GeneDict = dict[str, list[SmallVariant]]
+CompHetDict = dict[str, dict[str, list[TalosVariant]]]
+GeneDict = dict[str, list[TalosVariant]]
 
 
 def gather_gene_dict(vcf_path: str) -> GeneDict:
@@ -368,7 +347,7 @@ def extract_csq(csq_contents: str) -> list[dict]:
 
 
 # todo: reinstate peds pedigree reading
-def find_comp_hets(var_list: list[SmallVariant], pedigree) -> CompHetDict:
+def find_comp_hets(var_list: list[TalosVariant], pedigree) -> CompHetDict:
     """
     manual implementation to find compound hets
     variants provided in the format
@@ -379,7 +358,7 @@ def find_comp_hets(var_list: list[SmallVariant], pedigree) -> CompHetDict:
     {sample: {var_as_string: [partner_variant, ...]}}
 
     Args:
-        var_list (list[SmallVariant]): all variants in this gene
+        var_list (list[TalosVariant]): all variants in this gene
         pedigree (): Pedigree
     """
 
